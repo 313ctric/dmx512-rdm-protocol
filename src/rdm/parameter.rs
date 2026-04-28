@@ -125,6 +125,29 @@ pub enum ParameterId {
     DnsIpV4NameServer,
     DnsHostName,
     DnsDomainName,
+    // E1.37-5 2024 Table A-1
+    ManufacturerUrl,
+    ProductUrl,
+    FirmwareUrl,
+    SerialNumber,
+    DeviceInfoOffstage,
+    TestData,
+    CommsStatusNsc,
+    IdentifyTimeout,
+    PowerOffReady,
+    ShippingLock,
+    ListTags,
+    AddTag,
+    RemoveTag,
+    CheckTag,
+    ClearTags,
+    DeviceUnitNumber,
+    DmxPersonalityId,
+    SensorTypeCustom,
+    SensorUnitCustom,
+    MetadataParameterVersion,
+    MetadataJson,
+    MetadataJsonUrl,
     // E1.37-7 2019 Table A-1
     EndpointList,
     EndpointListChange,
@@ -244,6 +267,29 @@ impl From<u16> for ParameterId {
             0x070b => Self::DnsIpV4NameServer,
             0x070c => Self::DnsHostName,
             0x070d => Self::DnsDomainName,
+            // E1.37-5
+            0x00d0 => Self::ManufacturerUrl,
+            0x00d1 => Self::ProductUrl,
+            0x00d2 => Self::FirmwareUrl,
+            0x00d3 => Self::SerialNumber,
+            0x00d4 => Self::DeviceInfoOffstage,
+            0x0016 => Self::TestData,
+            0x0017 => Self::CommsStatusNsc,
+            0x1050 => Self::IdentifyTimeout,
+            0x1051 => Self::PowerOffReady,
+            0x0650 => Self::ShippingLock,
+            0x0651 => Self::ListTags,
+            0x0652 => Self::AddTag,
+            0x0653 => Self::RemoveTag,
+            0x0654 => Self::CheckTag,
+            0x0655 => Self::ClearTags,
+            0x0656 => Self::DeviceUnitNumber,
+            0x00e2 => Self::DmxPersonalityId,
+            0x0210 => Self::SensorTypeCustom,
+            0x0211 => Self::SensorUnitCustom,
+            0x0052 => Self::MetadataParameterVersion,
+            0x0053 => Self::MetadataJson,
+            0x0054 => Self::MetadataJsonUrl,
             // E1.37-7
             0x0900 => Self::EndpointList,
             0x0901 => Self::EndpointListChange,
@@ -365,6 +411,29 @@ impl From<ParameterId> for u16 {
             ParameterId::DnsIpV4NameServer => 0x070b,
             ParameterId::DnsHostName => 0x070c,
             ParameterId::DnsDomainName => 0x070d,
+            // E1.37-5
+            ParameterId::ManufacturerUrl => 0x00d0,
+            ParameterId::ProductUrl => 0x00d1,
+            ParameterId::FirmwareUrl => 0x00d2,
+            ParameterId::SerialNumber => 0x00d3,
+            ParameterId::DeviceInfoOffstage => 0x00d4,
+            ParameterId::TestData => 0x0016,
+            ParameterId::CommsStatusNsc => 0x0017,
+            ParameterId::IdentifyTimeout => 0x1050,
+            ParameterId::PowerOffReady => 0x1051,
+            ParameterId::ShippingLock => 0x0650,
+            ParameterId::ListTags => 0x0651,
+            ParameterId::AddTag => 0x0652,
+            ParameterId::RemoveTag => 0x0653,
+            ParameterId::CheckTag => 0x0654,
+            ParameterId::ClearTags => 0x0655,
+            ParameterId::DeviceUnitNumber => 0x0656,
+            ParameterId::DmxPersonalityId => 0x00e2,
+            ParameterId::SensorTypeCustom => 0x0210,
+            ParameterId::SensorUnitCustom => 0x0211,
+            ParameterId::MetadataParameterVersion => 0x0052,
+            ParameterId::MetadataJson => 0x0053,
+            ParameterId::MetadataJsonUrl => 0x0054,
             // E1.37-7
             ParameterId::EndpointList => 0x0900,
             ParameterId::EndpointListChange => 0x0901,
@@ -700,6 +769,66 @@ impl TryFrom<u8> for ImplementedCommandClass {
             0x03 => Ok(Self::GetSet),
             _ => Err(RdmError::InvalidCommandClassImplementation(value)),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeviceInfo {
+    pub protocol_version: ProtocolVersion,
+    pub model_id: u16,
+    pub product_category: ProductCategory,
+    pub software_version_id: u32,
+    pub footprint: u16,
+    pub current_personality: u8,
+    pub personality_count: u8,
+    pub start_address: u16,
+    pub sub_device_count: u16,
+    pub sensor_count: u8,
+}
+impl DeviceInfo {
+    #[cfg(feature = "alloc")]
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(19);
+        buf.extend(u16::from(self.protocol_version).to_be_bytes());
+        buf.extend(self.model_id.to_be_bytes());
+        buf.extend(u16::from(self.product_category).to_be_bytes());
+        buf.extend(self.software_version_id.to_be_bytes());
+        buf.extend(self.footprint.to_be_bytes());
+        buf.push(self.current_personality);
+        buf.push(self.personality_count);
+        buf.extend(self.start_address.to_be_bytes());
+        buf.extend(self.sub_device_count.to_be_bytes());
+        buf.push(self.sensor_count);
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    pub fn encode(&self, buf: &mut Vec<u8, 231>) {    
+        buf.extend(u16::from(self.protocol_version).to_be_bytes());
+        buf.extend(self.model_id.to_be_bytes());
+        buf.extend(u16::from(self.product_category).to_be_bytes());
+        buf.extend(self.software_version_id.to_be_bytes());
+        buf.extend(self.footprint.to_be_bytes());
+        buf.push(self.current_personality).unwrap();
+        buf.push(self.personality_count).unwrap();
+        buf.extend(self.start_address.to_be_bytes());
+        buf.extend(self.sub_device_count.to_be_bytes());
+        buf.push(self.sensor_count).unwrap();
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, RdmError> {
+        check_msg_len!(bytes, 19);
+        Ok(Self {
+            protocol_version: ProtocolVersion::new(bytes[0], bytes[1]),
+            model_id: u16::from_be_bytes(bytes[2..=3].try_into()?),
+            product_category: u16::from_be_bytes(bytes[4..=5].try_into()?).into(),
+            software_version_id: u32::from_be_bytes(bytes[6..=9].try_into()?),
+            footprint: u16::from_be_bytes(bytes[10..=11].try_into()?),
+            current_personality: bytes[12],
+            personality_count: bytes[13],
+            start_address: u16::from_be_bytes(bytes[14..=15].try_into()?),
+            sub_device_count: u16::from_be_bytes(bytes[16..=17].try_into()?),
+            sensor_count: u8::from_be(bytes[18]),
+        })
     }
 }
 
@@ -2836,6 +2965,27 @@ impl From<IdentifyTimeout> for u16 {
         match value {
             IdentifyTimeout::Disabled => 0,
             IdentifyTimeout::Seconds(s) => s,
+        }
+    }
+}
+
+// E1.37-5 2024 Table A-2
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShippingLockState {
+    Unlocked = 0x00,
+    Locked = 0x01,
+    PartiallyLocked = 0x02,
+}
+
+impl TryFrom<u8> for ShippingLockState {
+    type Error = RdmError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(Self::Unlocked),
+            0x01 => Ok(Self::Locked),
+            0x02 => Ok(Self::PartiallyLocked),
+            _ => Err(RdmError::InvalidShippingLockState(value))
         }
     }
 }

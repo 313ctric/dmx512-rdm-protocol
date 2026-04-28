@@ -48,12 +48,12 @@
 use super::{
     bsd_16_crc,
     parameter::{
-        decode_string_bytes, BrokerState, DefaultSlotValue, DhcpMode, DiscoveryCountStatus,
-        DiscoveryState, DisplayInvertMode, EndpointId, EndpointMode, EndpointType, IdentifyMode, Ipv4Address,
-        Ipv4Route, Ipv6Address, LampOnMode, LampState, MergeMode, NetworkInterface,
+        decode_string_bytes, BrokerState, DefaultSlotValue, DeviceInfo, DhcpMode, DiscoveryCountStatus,
+        DiscoveryState, DisplayInvertMode, EndpointId, EndpointMode, EndpointType, IdentifyMode, IdentifyTimeout,
+        Ipv4Address, Ipv4Route, Ipv6Address, LampOnMode, LampState, MergeMode, NetworkInterface,
         ParameterDescription, ParameterId, PinCode, PowerState, PresetPlaybackMode,
-        PresetProgrammed, ProductCategory, ProductDetail, ProtocolVersion, SelfTest,
-        SensorDefinition, SensorValue, SlotInfo, StaticConfigType, StatusMessage, StatusType,
+        PresetProgrammed, ProductDetail, SelfTest, SensorDefinition, SensorType, SensorUnit,
+        SensorValue, ShippingLockState, SlotInfo, StaticConfigType, StatusMessage, StatusType,
         SupportedTimes, TimeMode,
     },
     CommandClass, DeviceUID, EncodedFrame, EncodedParameterData, RdmError, SubDeviceId,
@@ -277,18 +277,7 @@ pub enum ResponseParameterData {
         #[cfg(not(feature = "alloc"))] Vec<u16, 115>,
     ),
     GetParameterDescription(ParameterDescription),
-    GetDeviceInfo {
-        protocol_version: ProtocolVersion,
-        model_id: u16,
-        product_category: ProductCategory,
-        software_version_id: u32,
-        footprint: u16,
-        current_personality: u8,
-        personality_count: u8,
-        start_address: u16,
-        sub_device_count: u16,
-        sensor_count: u8,
-    },
+    GetDeviceInfo(DeviceInfo),
     GetProductDetailIdList(
         #[cfg(feature = "alloc")] Vec<ProductDetail>,
         #[cfg(not(feature = "alloc"))] Vec<ProductDetail, 115>,
@@ -545,6 +534,86 @@ pub enum ResponseParameterData {
         #[cfg(not(feature = "alloc"))] String<63>,
     ),
     GetDnsDomainName(
+        #[cfg(feature = "alloc")] String,
+        #[cfg(not(feature = "alloc"))] String<231>,
+    ),
+    // E1.37-5
+    GetIdentifyTimeout(IdentifyTimeout),
+    GetManufacturerUrl(
+        #[cfg(feature = "alloc")] String,
+        #[cfg(not(feature = "alloc"))] String<231>,
+    ),
+    GetProductUrl(
+        #[cfg(feature = "alloc")] String,
+        #[cfg(not(feature = "alloc"))] String<231>,
+    ),
+    GetFirmwareUrl(
+        #[cfg(feature = "alloc")] String,
+        #[cfg(not(feature = "alloc"))] String<231>,
+    ),
+    GetShippingLock(ShippingLockState),
+    GetPowerOffReady(bool),
+    GetSerialNumber(
+        #[cfg(feature = "alloc")] String,
+        #[cfg(not(feature = "alloc"))] String<231>,
+    ),
+    GetTestData(
+        #[cfg(feature = "alloc")] Vec<u8>,
+        #[cfg(not(feature = "alloc"))] Vec<u8, 231>,
+    ),
+    SetTestData(
+        #[cfg(feature = "alloc")] Vec<u8>,
+        #[cfg(not(feature = "alloc"))] Vec<u8, 231>,
+    ),
+    GetCommsStatusNSC {
+        checksum: Option<u32>,
+        packet_count: Option<u32>,
+        most_recent_slot_count: Option<u16>,
+        minimum_slot_count: Option<u16>,
+        maximum_slot_count: Option<u16>,
+        packet_error_count: Option<u32>,
+    },
+    // GetResponderTags // TODO
+    CheckResponderTag(bool),
+    /// Unit number of 0 is unset
+    GetDeviceUnitNumber(u32),
+    GetDmxPersonalityId {
+        personality: u8,
+        major_id: u16,
+        minor_id: u16
+    },
+    GetDeviceInfoOffstage {
+        root_personality: u8,
+        sub_device_id: SubDeviceId,
+        sub_device_personality: u8,
+        info: DeviceInfo,
+    },
+    GetSensorTypeCustom {
+        /// Should be manufacturer specific
+        sensor_type: SensorType,
+        #[cfg(feature = "alloc")]
+        label: String,
+        #[cfg(not(feature = "alloc"))]
+        label: String<32>,
+    },
+    GetSensorUnitCustom {
+        /// Should be manufacturer specific
+        sensor_unit: SensorUnit,
+        #[cfg(feature = "alloc")]
+        label: String,
+        #[cfg(not(feature = "alloc"))]
+        label: String<32>,
+    },
+    GetMetadataParameterVersion {
+        parameter_id: ParameterId,
+        version: u16,
+    },
+    GetMetadataJson {
+        parameter_id: Option<ParameterId>,
+        #[cfg(feature = "alloc")] json_text: String,
+        #[cfg(not(feature = "alloc"))] json_text: String<231>,
+    },
+    GetMetadataJsonUrl(
         #[cfg(feature = "alloc")] String,
         #[cfg(not(feature = "alloc"))] String<231>,
     ),
@@ -854,45 +923,8 @@ impl ResponseParameterData {
                 #[cfg(not(feature = "alloc"))]
                 buf.extend(description.description.bytes());
             }
-            Self::GetDeviceInfo {
-                protocol_version,
-                model_id,
-                product_category,
-                software_version_id,
-                footprint,
-                current_personality,
-                personality_count,
-                start_address,
-                sub_device_count,
-                sensor_count,
-            } => {
-                #[cfg(feature = "alloc")]
-                buf.reserve(21);
-
-                buf.extend(u16::from(*protocol_version).to_be_bytes());
-
-                buf.extend(model_id.to_be_bytes());
-                buf.extend(u16::from(*product_category).to_be_bytes());
-                buf.extend(software_version_id.to_be_bytes());
-                buf.extend(footprint.to_be_bytes());
-
-                #[cfg(feature = "alloc")]
-                buf.push(*current_personality);
-                #[cfg(not(feature = "alloc"))]
-                buf.push(*current_personality).unwrap();
-
-                #[cfg(feature = "alloc")]
-                buf.push(*personality_count);
-                #[cfg(not(feature = "alloc"))]
-                buf.push(*personality_count).unwrap();
-
-                buf.extend(start_address.to_be_bytes());
-                buf.extend(sub_device_count.to_be_bytes());
-
-                #[cfg(feature = "alloc")]
-                buf.push(*sensor_count);
-                #[cfg(not(feature = "alloc"))]
-                buf.push(*sensor_count).unwrap();
+            Self::GetDeviceInfo(info) => {
+                info.encode(&mut buf);
             }
             Self::GetProductDetailIdList(details) => {
                 #[cfg(feature = "alloc")]
@@ -1774,6 +1806,187 @@ impl ResponseParameterData {
 
                 buf.extend(domain_name.bytes());
             }
+            // E1.37-5
+            Self::GetIdentifyTimeout(identify_timeout) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(2);
+
+                buf.extend(u16::from(*identify_timeout).to_be_bytes());
+            }
+            Self::GetManufacturerUrl(url) |
+            Self::GetProductUrl(url) |
+            Self::GetFirmwareUrl(url) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(url.len());
+
+                buf.extend(url.bytes());
+            }
+            Self::GetShippingLock(lock) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1);
+
+                #[cfg(feature = "alloc")]
+                buf.push((*lock) as u8);
+                #[cfg(not(feature = "alloc"))]
+                buf.push((*lock) as u8).unwrap();
+            }
+            Self::GetPowerOffReady(ready) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1);
+
+                #[cfg(feature = "alloc")]
+                buf.push(if *ready {1} else {0});
+                #[cfg(not(feature = "alloc"))]
+                buf.push(if *ready {1} else {0}).unwrap();
+            }
+            Self::GetSerialNumber(num) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(num.len());
+
+                buf.extend(num.bytes());
+            }
+            Self::GetTestData(data) | Self::SetTestData(data) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(data.len());
+
+                #[cfg(feature = "alloc")]
+                buf.extend(data);
+                #[cfg(not(feature = "alloc"))]
+                buf.extend_from_slice(data).unwrap();
+            }
+            Self::GetCommsStatusNSC {
+                checksum,
+                packet_count,
+                most_recent_slot_count,
+                minimum_slot_count,
+                maximum_slot_count,
+                packet_error_count
+            } => {
+                let supported: u8 = 
+                    if checksum.is_some() {0x01} else {0} |
+                    if packet_count.is_some() {0x02} else {0} |
+                    if most_recent_slot_count.is_some() {0x04} else {0} |
+                    if minimum_slot_count.is_some() {0x08} else {0} |
+                    if maximum_slot_count.is_some() {0x10} else {0} |
+                    if packet_error_count.is_some() {0x20} else {0};
+                
+                #[cfg(feature = "alloc")]
+                buf.reserve(19);
+
+                #[cfg(feature = "alloc")]
+                buf.push(supported);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(supported).unwrap();
+
+                buf.extend(checksum.unwrap_or(0).to_be_bytes());
+                buf.extend(packet_count.unwrap_or(0).to_be_bytes());
+                buf.extend(most_recent_slot_count.unwrap_or(0).to_be_bytes());
+                buf.extend(minimum_slot_count.unwrap_or(0).to_be_bytes());
+                buf.extend(maximum_slot_count.unwrap_or(0).to_be_bytes());
+                buf.extend(packet_error_count.unwrap_or(0).to_be_bytes());
+            }
+            Self::CheckResponderTag(present) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1);
+
+                #[cfg(feature = "alloc")]
+                buf.push(if *present {1} else {0});
+                #[cfg(not(feature = "alloc"))]
+                buf.push(if *present {1} else {0}).unwrap();
+            }
+            Self::GetDeviceUnitNumber(num) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(4);
+
+                buf.extend((*num).to_be_bytes());
+            }
+            Self::GetDmxPersonalityId {
+                personality,
+                major_id,
+                minor_id
+            } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(5);
+
+                #[cfg(feature = "alloc")]
+                buf.push(*personality);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*personality).unwrap();
+
+                buf.extend((*major_id).to_be_bytes());
+                buf.extend((*minor_id).to_be_bytes());
+            }
+            Self::GetDeviceInfoOffstage {
+                root_personality,
+                sub_device_id,
+                sub_device_personality,
+                info
+            } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(4+19);
+
+                #[cfg(feature = "alloc")]
+                buf.push(*root_personality);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*root_personality).unwrap();
+
+                buf.extend(u16::from(*sub_device_id).to_be_bytes());
+
+                #[cfg(feature = "alloc")]
+                buf.push(*sub_device_personality);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*sub_device_personality).unwrap();
+
+                info.encode(&mut buf);
+            }
+            Self::GetSensorTypeCustom { sensor_type, label } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1+label.len());
+
+                #[cfg(feature = "alloc")]
+                buf.push((*sensor_type).into());
+                #[cfg(not(feature = "alloc"))]
+                buf.push((*sensor_type).into()).unwrap();
+
+                buf.extend(label.bytes());
+            }
+            Self::GetSensorUnitCustom { sensor_unit, label } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1+label.len());
+
+                #[cfg(feature = "alloc")]
+                buf.push((*sensor_unit).into());
+                #[cfg(not(feature = "alloc"))]
+                buf.push((*sensor_unit).into()).unwrap();
+
+                buf.extend(label.bytes());
+            }
+            Self::GetMetadataParameterVersion { parameter_id, version } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(4);
+
+                buf.extend(u16::from(*parameter_id).to_be_bytes());
+                buf.extend((*version).to_be_bytes());
+            }
+            Self::GetMetadataJson { parameter_id, json_text } => {
+                if let Some(pid) = parameter_id {
+                    #[cfg(feature = "alloc")]
+                    buf.reserve(2+json_text.len());
+
+                    buf.extend(u16::from(*pid).to_be_bytes());
+                } else {
+                    #[cfg(feature = "alloc")]
+                    buf.reserve(json_text.len());
+                }
+
+                buf.extend(json_text.bytes());
+            }
+            Self::GetMetadataJsonUrl(url) => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(url.len());
+
+                buf.extend(url.bytes());
+            }
             // E1.37-7
             Self::GetEndpointList {
                 list_change_number,
@@ -2254,18 +2467,9 @@ impl ResponseParameterData {
             }
             (CommandClass::GetCommandResponse, ParameterId::DeviceInfo) => {
                 check_msg_len!(bytes, 19);
-                Ok(Self::GetDeviceInfo {
-                    protocol_version: ProtocolVersion::new(bytes[0], bytes[1]),
-                    model_id: u16::from_be_bytes(bytes[2..=3].try_into()?),
-                    product_category: u16::from_be_bytes(bytes[4..=5].try_into()?).into(),
-                    software_version_id: u32::from_be_bytes(bytes[6..=9].try_into()?),
-                    footprint: u16::from_be_bytes(bytes[10..=11].try_into()?),
-                    current_personality: bytes[12],
-                    personality_count: bytes[13],
-                    start_address: u16::from_be_bytes(bytes[14..=15].try_into()?),
-                    sub_device_count: u16::from_be_bytes(bytes[16..=17].try_into()?),
-                    sensor_count: u8::from_be(bytes[18]),
-                })
+                Ok(Self::GetDeviceInfo(
+                    DeviceInfo::decode(bytes)?
+                ))
             }
             (CommandClass::GetCommandResponse, ParameterId::ProductDetailIdList) => {
                 Ok(Self::GetProductDetailIdList(
@@ -2813,6 +3017,125 @@ impl ResponseParameterData {
             (CommandClass::GetCommandResponse, ParameterId::DnsDomainName) => {
                 Ok(Self::GetDnsHostName(decode_string_bytes(&bytes[..bytes.len().min(231)])?))
             },
+            // E1.37-5
+            (CommandClass::GetCommandResponse, ParameterId::IdentifyTimeout) => {
+                check_msg_len!(bytes, 2);
+                Ok(Self::GetIdentifyTimeout(
+                    u16::from_be_bytes([bytes[0], bytes[1]]).into()
+                ))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::ManufacturerUrl) => {
+                Ok(Self::GetManufacturerUrl(decode_string_bytes(&bytes[..bytes.len().min(231)])?))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::ProductUrl) => {
+                Ok(Self::GetProductUrl(decode_string_bytes(&bytes[..bytes.len().min(231)])?))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::FirmwareUrl) => {
+                Ok(Self::GetFirmwareUrl(decode_string_bytes(&bytes[..bytes.len().min(231)])?))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::ShippingLock) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetShippingLock(
+                    bytes[0].try_into()?
+                ))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::PowerOffReady) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetPowerOffReady(
+                    bytes[0] != 0
+                ))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::SerialNumber) => {
+                Ok(Self::GetSerialNumber(decode_string_bytes(&bytes[..bytes.len().min(231)])?))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::TestData) => {
+                #[cfg(feature = "alloc")]
+                let r = bytes[..bytes.len().min(231)].into();
+                #[cfg(not(feature = "alloc"))]
+                let r = Vec::<u8, 231>::from_slice(&bytes[..bytes.len().min(231)]).unwrap();
+                Ok(Self::GetTestData(r))
+            }
+            (CommandClass::SetCommandResponse, ParameterId::TestData) => {
+                #[cfg(feature = "alloc")]
+                let r = bytes[..bytes.len().min(231)].into();
+                #[cfg(not(feature = "alloc"))]
+                let r = Vec::<u8, 231>::from_slice(&bytes[..bytes.len().min(231)]).unwrap();
+                Ok(Self::SetTestData(r))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::CommsStatusNsc) => {
+                check_msg_len!(bytes, 19);
+                let present = bytes[0];
+                Ok(Self::GetCommsStatusNSC {
+                    checksum: if present & 0x01 != 0 {
+                        Some(u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]))} else {None},
+                    packet_count: if present & 0x02 != 0 {
+                        Some(u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]))} else {None},
+                    most_recent_slot_count: if present & 0x04 != 0 {
+                        Some(u16::from_be_bytes([bytes[9], bytes[10]]))} else {None},
+                    minimum_slot_count: if present & 0x08 != 0 {
+                        Some(u16::from_be_bytes([bytes[11], bytes[12]]))} else {None},
+                    maximum_slot_count: if present & 0x10 != 0 {
+                        Some(u16::from_be_bytes([bytes[13], bytes[14]]))} else {None},
+                    packet_error_count: if present & 0x20 != 0 {
+                        Some(u32::from_be_bytes([bytes[15], bytes[16], bytes[17], bytes[18]]))} else {None},
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::CheckTag) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::CheckResponderTag(
+                    bytes[0] != 0
+                ))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::DeviceUnitNumber) => {
+                check_msg_len!(bytes, 4);
+                Ok(Self::GetDeviceUnitNumber(
+                    u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                ))
+            }
+            (CommandClass::GetCommandResponse, ParameterId::DmxPersonalityId) => {
+                check_msg_len!(bytes, 5);
+                Ok(Self::GetDmxPersonalityId {
+                    personality: bytes[0],
+                    major_id: u16::from_be_bytes([bytes[1], bytes[2]]),
+                    minor_id: u16::from_be_bytes([bytes[3], bytes[4]]),
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::DeviceInfoOffstage) => {
+                check_msg_len!(bytes, 23);
+                Ok(Self::GetDeviceInfoOffstage {
+                    root_personality: bytes[0],
+                    sub_device_id: u16::from_be_bytes([bytes[1], bytes[2]]).into(),
+                    sub_device_personality: bytes[3],
+                    info: DeviceInfo::decode(&bytes[4..])?
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::SensorTypeCustom) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetSensorTypeCustom {
+                    sensor_type: bytes[0].try_into()?,
+                    label: decode_string_bytes(&bytes[1..bytes.len().min(1+32)])?,
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::SensorUnitCustom) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetSensorUnitCustom {
+                    sensor_unit: bytes[0].try_into()?,
+                    label: decode_string_bytes(&bytes[1..bytes.len().min(1+32)])?,
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::MetadataParameterVersion) => {
+                check_msg_len!(bytes, 4);
+                Ok(Self::GetMetadataParameterVersion {
+                    parameter_id: u16::from_be_bytes([bytes[0], bytes[1]]).into(),
+                    version: u16::from_be_bytes([bytes[2], bytes[3]])
+                })
+            }
+            // (CommandClass::GetCommandResponse, ParameterId::MetadataJson) => todo!(),
+            (CommandClass::GetCommandResponse, ParameterId::MetadataJsonUrl) => {
+                Ok(Self::GetMetadataJsonUrl(
+                    decode_string_bytes(&bytes[0..bytes.len().min(231)])?
+                ))
+            }
             // E1.37-7
             (CommandClass::GetCommandResponse, ParameterId::EndpointList) => {
                 check_msg_len!(bytes, 4);
