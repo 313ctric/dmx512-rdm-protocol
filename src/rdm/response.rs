@@ -573,7 +573,12 @@ pub enum ResponseParameterData {
         maximum_slot_count: Option<u16>,
         packet_error_count: Option<u32>,
     },
-    // GetResponderTags // TODO
+    GetResponderTags {
+        #[cfg(feature = "alloc")]
+        tags: Vec<String>,
+        #[cfg(not(feature = "alloc"))]
+        tags: Vec<String<32>, 115>,
+    },
     CheckResponderTag(bool),
     /// Unit number of 0 is unset
     GetDeviceUnitNumber(u32),
@@ -609,9 +614,12 @@ pub enum ResponseParameterData {
         version: u16,
     },
     GetMetadataJson {
-        parameter_id: Option<ParameterId>,
-        #[cfg(feature = "alloc")] json_text: String,
-        #[cfg(not(feature = "alloc"))] json_text: String<231>,
+        /// If this is the first message it will contain the 2-byte PID,
+        /// followed by the start of the JSON string
+        /// 
+        /// Otherwise it will just contain part of the JSON string
+        #[cfg(feature = "alloc")] json_data: Vec<u8>,
+        #[cfg(not(feature = "alloc"))] json_data: Vec<u8, 231>,
     },
     GetMetadataJsonUrl(
         #[cfg(feature = "alloc")] String,
@@ -1885,6 +1893,16 @@ impl ResponseParameterData {
                 buf.extend(maximum_slot_count.unwrap_or(0).to_be_bytes());
                 buf.extend(packet_error_count.unwrap_or(0).to_be_bytes());
             }
+            Self::GetResponderTags { tags } => {
+                for t in tags {
+                    buf.extend(t.bytes());
+
+                    #[cfg(feature = "alloc")]
+                    buf.push(0);
+                    #[cfg(not(feature = "alloc"))]
+                    buf.push(0).unwrap();
+                }
+            }
             Self::CheckResponderTag(present) => {
                 #[cfg(feature = "alloc")]
                 buf.reserve(1);
@@ -1968,18 +1986,14 @@ impl ResponseParameterData {
                 buf.extend(u16::from(*parameter_id).to_be_bytes());
                 buf.extend((*version).to_be_bytes());
             }
-            Self::GetMetadataJson { parameter_id, json_text } => {
-                if let Some(pid) = parameter_id {
-                    #[cfg(feature = "alloc")]
-                    buf.reserve(2+json_text.len());
+            Self::GetMetadataJson { json_data } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(json_data.len());
 
-                    buf.extend(u16::from(*pid).to_be_bytes());
-                } else {
-                    #[cfg(feature = "alloc")]
-                    buf.reserve(json_text.len());
-                }
-
-                buf.extend(json_text.bytes());
+                #[cfg(feature = "alloc")]
+                buf.extend(json_data);
+                #[cfg(not(feature = "alloc"))]
+                buf.extend_from_slice(json_data).unwrap();
             }
             Self::GetMetadataJsonUrl(url) => {
                 #[cfg(feature = "alloc")]
@@ -3080,6 +3094,23 @@ impl ResponseParameterData {
                         Some(u32::from_be_bytes([bytes[15], bytes[16], bytes[17], bytes[18]]))} else {None},
                 })
             }
+            (CommandClass::GetCommandResponse, ParameterId::ListTags) => {
+                let mut tags = Vec::new();
+                let mut remaining = bytes;
+                while remaining.len() > 0 {
+                    // UTF-8 never produces a null, so this is fine for unicode as well as ASCII
+                    let len = remaining.iter().position(|&x| x==0).unwrap_or(remaining.len());
+
+                    if len != 0 {
+                        // limit string length to 32 bytes, truncate if longer
+                        let tag = decode_string_bytes(&remaining[..len.min(32)])?;
+                        tags.push(tag);
+                    }
+                    remaining = &remaining[(len+1).min(remaining.len())..];
+                }
+
+                Ok(Self::GetResponderTags { tags })
+            }
             (CommandClass::GetCommandResponse, ParameterId::CheckTag) => {
                 check_msg_len!(bytes, 1);
                 Ok(Self::CheckResponderTag(
@@ -3130,7 +3161,13 @@ impl ResponseParameterData {
                     version: u16::from_be_bytes([bytes[2], bytes[3]])
                 })
             }
-            // (CommandClass::GetCommandResponse, ParameterId::MetadataJson) => todo!(),
+            (CommandClass::GetCommandResponse, ParameterId::MetadataJson) => {
+                #[cfg(feature = "alloc")]
+                let json_data = bytes[..bytes.len().min(231)].to_vec();
+                #[cfg(not(feature = "alloc"))]
+                let json_data = Vec::<u8, 231>::from_slice(&bytes[..bytes.len().min(231)]).unwrap();
+                Ok(Self::GetMetadataJson { json_data })
+            },
             (CommandClass::GetCommandResponse, ParameterId::MetadataJsonUrl) => {
                 Ok(Self::GetMetadataJsonUrl(
                     decode_string_bytes(&bytes[0..bytes.len().min(231)])?
