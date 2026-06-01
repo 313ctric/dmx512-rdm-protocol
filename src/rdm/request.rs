@@ -43,8 +43,8 @@ use super::{
     bsd_16_crc,
     error::RdmError,
     parameter::{
-        decode_string_bytes, BrokerState, DiscoveryState, DisplayInvertMode, EndpointId,
-        EndpointMode, FadeTimes, IdentifyMode, Ipv4Address, Ipv4Route, Ipv6Address, LampOnMode, LampState,
+        decode_string_bytes, BrokerState, DiscoveryState, DisplayInvertMode, EndpointId, EndpointMode,
+        FadeTimes, IdentifyMode, IdentifyTimeout, Ipv4Address, Ipv4Route, Ipv6Address, LampOnMode, LampState,
         MergeMode, ParameterId, PinCode, PowerState, PresetPlaybackMode, ResetDeviceMode, SelfTest,
         StaticConfigType, StatusType, TimeMode,
     },
@@ -377,6 +377,76 @@ pub enum RequestParameter {
         #[cfg(not(feature = "alloc"))]
         domain_name: String<231>,
     },
+    // E1.37-5
+    GetIdentifyTimeout,
+    SetIdentifyTimeout {
+        timeout: IdentifyTimeout
+    },
+    GetManufacturerUrl,
+    GetProductUrl,
+    GetFirmwareUrl,
+    GetShippingLock,
+    SetShippingLock {
+        locked: bool
+    },
+    GetPowerOffReady,
+    GetSerialNumber,
+    GetTestData {
+        pattern_length: u16,
+    },
+    SetTestData {
+        #[cfg(feature = "alloc")]
+        loopback_data: Vec<u8>,
+        #[cfg(not(feature = "alloc"))]
+        loopback_data: Vec<u8, 231>,
+    },
+    GetCommsStatusNsc,
+    SetCommsStatusNsc,
+    GetResponderTags,
+    SetAddTag {
+        #[cfg(feature = "alloc")]
+        tag: String,
+        #[cfg(not(feature = "alloc"))]
+        tag: String<32>,
+    },
+    SetRemoveTag {
+        #[cfg(feature = "alloc")]
+        tag: String,
+        #[cfg(not(feature = "alloc"))]
+        tag: String<32>,
+    },
+    GetCheckTag {
+        #[cfg(feature = "alloc")]
+        tag: String,
+        #[cfg(not(feature = "alloc"))]
+        tag: String<32>,
+    },
+    SetClearTags,
+    GetDeviceUnitNumber,
+    SetDeviceUnitNumber {
+        unit_number: u32,
+    },
+    GetDmxPersonalityId {
+        personality_number: u8,
+    },
+    GetDeviceInfoOffstage {
+        root_personality: u8,
+        sub_device: SubDeviceId,
+        sub_device_personality: u8,
+    },
+    GetSensorTypeCustom {
+        sensor_type: u8,
+    },
+    GetSensorUnitCustom {
+        sensor_unit: u8,
+    },
+    GetMetadataParameterVersion {
+        parameter_id: ParameterId,
+    },
+    GetMetadataJson {
+        parameter_id: ParameterId,
+    },
+    GetMetadataJsonUrl,
     // E1.37-7
     GetEndpointList,
     GetEndpointListChange,
@@ -594,6 +664,26 @@ impl RequestParameter {
             | Self::GetDnsIpV4NameServer { .. }
             | Self::GetDnsHostName
             | Self::GetDnsDomainName
+            // E1.37-5
+            | Self::GetIdentifyTimeout
+            | Self::GetManufacturerUrl
+            | Self::GetProductUrl
+            | Self::GetFirmwareUrl
+            | Self::GetShippingLock
+            | Self::GetPowerOffReady
+            | Self::GetSerialNumber
+            | Self::GetTestData { .. }
+            | Self::GetCommsStatusNsc
+            | Self::GetResponderTags
+            | Self::GetCheckTag { .. }
+            | Self::GetDeviceUnitNumber
+            | Self::GetDmxPersonalityId { .. }
+            | Self::GetDeviceInfoOffstage { .. }
+            | Self::GetSensorTypeCustom { .. }
+            | Self::GetSensorUnitCustom { .. }
+            | Self::GetMetadataParameterVersion { .. }
+            | Self::GetMetadataJson { .. }
+            | Self::GetMetadataJsonUrl
             // E1.37-7
             | Self::GetEndpointList
             | Self::GetEndpointListChange
@@ -673,6 +763,15 @@ impl RequestParameter {
             | Self::SetDnsIpV4NameServer { .. }
             | Self::SetDnsHostName { .. }
             | Self::SetDnsDomainName { .. }
+            // E1.37-5
+            | Self::SetIdentifyTimeout { .. }
+            | Self::SetShippingLock { .. }
+            | Self::SetTestData { .. }
+            | Self::SetCommsStatusNsc
+            | Self::SetAddTag { .. }
+            | Self::SetRemoveTag { .. }
+            | Self::SetClearTags
+            | Self::SetDeviceUnitNumber { .. }
             // E1.37-7
             | Self::SetIdentifyEndpoint { .. }
             | Self::SetEndpointToUniverse { .. }
@@ -823,6 +922,29 @@ impl RequestParameter {
             }
             Self::GetDnsHostName | Self::SetDnsHostName { .. } => ParameterId::DnsHostName,
             Self::GetDnsDomainName | Self::SetDnsDomainName { .. } => ParameterId::DnsDomainName,
+            // E1.37-5
+            Self::GetIdentifyTimeout | Self::SetIdentifyTimeout { .. } => ParameterId::IdentifyTimeout,
+            Self::GetManufacturerUrl => ParameterId::ManufacturerUrl,
+            Self::GetProductUrl => ParameterId::ProductUrl,
+            Self::GetFirmwareUrl => ParameterId::FirmwareUrl,
+            Self::GetShippingLock | Self::SetShippingLock { .. } => ParameterId::ShippingLock,
+            Self::GetPowerOffReady => ParameterId::PowerOffReady,
+            Self::GetSerialNumber => ParameterId::SerialNumber,
+            Self::GetTestData { .. } | Self::SetTestData { .. } => ParameterId::TestData,
+            Self::GetCommsStatusNsc | Self::SetCommsStatusNsc => ParameterId::CommsStatusNsc,
+            Self::GetResponderTags => ParameterId::ListTags,
+            Self::SetAddTag { .. } => ParameterId::AddTag,
+            Self::SetRemoveTag { .. } => ParameterId::RemoveTag,
+            Self::GetCheckTag { .. } => ParameterId::CheckTag,
+            Self::SetClearTags => ParameterId::ClearTags,
+            Self::GetDeviceUnitNumber | Self::SetDeviceUnitNumber { .. } => ParameterId::DeviceUnitNumber,
+            Self::GetDmxPersonalityId { .. } => ParameterId::DmxPersonalityId,
+            Self::GetDeviceInfoOffstage { .. } => ParameterId::DeviceInfoOffstage,
+            Self::GetSensorTypeCustom { .. } => ParameterId::SensorTypeCustom,
+            Self::GetSensorUnitCustom { .. } => ParameterId::SensorUnitCustom,
+            Self::GetMetadataParameterVersion { .. } => ParameterId::MetadataParameterVersion,
+            Self::GetMetadataJson { .. } => ParameterId::MetadataJson,
+            Self::GetMetadataJsonUrl => ParameterId::MetadataJsonUrl,
             // E1.37-7
             Self::GetEndpointList => ParameterId::EndpointList,
             Self::GetEndpointListChange => ParameterId::EndpointListChange,
@@ -1634,6 +1756,114 @@ impl RequestParameter {
 
                 buf.extend(domain_name.bytes())
             }
+            // E1.37-5
+            Self::GetIdentifyTimeout => {}
+            Self::SetIdentifyTimeout { timeout } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(0x02);
+
+                buf.extend(u16::from(*timeout).to_be_bytes());
+            }
+            Self::GetManufacturerUrl => {}
+            Self::GetProductUrl => {}
+            Self::GetFirmwareUrl => {}
+            Self::GetShippingLock => {}
+            Self::SetShippingLock { locked } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(0x01);
+
+                #[cfg(feature = "alloc")]
+                buf.push(if *locked {1} else {0});
+                #[cfg(not(feature = "alloc"))]
+                buf.push(if *locked {1} else {0}).unwrap();
+            }
+            Self::GetPowerOffReady => {}
+            Self::GetSerialNumber => {}
+            Self::GetTestData { pattern_length } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(0x02);
+
+                buf.extend((*pattern_length).to_be_bytes());
+            }
+            Self::SetTestData { loopback_data } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(loopback_data.len());
+
+                #[cfg(feature = "alloc")]
+                buf.extend(loopback_data);
+                #[cfg(not(feature = "alloc"))]
+                buf.extend_from_slice(loopback_data).unwrap();
+            }
+            Self::GetCommsStatusNsc => {}
+            Self::SetCommsStatusNsc => {}
+            Self::GetResponderTags => {}
+            Self::SetAddTag { tag } |
+            Self::SetRemoveTag { tag } |
+            Self::GetCheckTag { tag } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(tag.len());
+
+                buf.extend(tag.bytes())
+            }
+            Self::SetClearTags => {}
+            Self::GetDeviceUnitNumber => {}
+            Self::SetDeviceUnitNumber { unit_number } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(4);
+
+                buf.extend((*unit_number).to_be_bytes());
+            }
+            Self::GetDmxPersonalityId { personality_number } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1);
+
+                #[cfg(feature = "alloc")]
+                buf.push(*personality_number);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*personality_number).unwrap();
+            }
+            Self::GetDeviceInfoOffstage { root_personality, sub_device, sub_device_personality } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(4);
+
+                #[cfg(feature = "alloc")]
+                buf.push(*root_personality);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*root_personality).unwrap();
+                
+                buf.extend(u16::from(*sub_device).to_be_bytes());
+
+                #[cfg(feature = "alloc")]
+                buf.push(*sub_device_personality);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*sub_device_personality).unwrap();
+            }
+            Self::GetSensorTypeCustom { sensor_type } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1);
+
+                #[cfg(feature = "alloc")]
+                buf.push(*sensor_type);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*sensor_type).unwrap();
+            }
+            Self::GetSensorUnitCustom { sensor_unit } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(1);
+
+                #[cfg(feature = "alloc")]
+                buf.push(*sensor_unit);
+                #[cfg(not(feature = "alloc"))]
+                buf.push(*sensor_unit).unwrap();
+            }
+            Self::GetMetadataParameterVersion { parameter_id } |
+            Self::GetMetadataJson { parameter_id } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(2);
+
+                buf.extend(u16::from(*parameter_id).to_be_bytes());
+            }
+            Self::GetMetadataJsonUrl => {}
             // E1.37-7
             Self::GetEndpointList => {}
             Self::GetEndpointListChange => {}
@@ -2485,6 +2715,104 @@ impl RequestParameter {
             (CommandClass::SetCommand, ParameterId::DnsDomainName) => Ok(Self::SetDnsDomainName {
                 domain_name: decode_string_bytes(bytes)?,
             }),
+            // E1.37-5
+            (CommandClass::GetCommand, ParameterId::IdentifyTimeout) => Ok(Self::GetIdentifyTimeout),
+            (CommandClass::SetCommand, ParameterId::IdentifyTimeout) => {
+                check_msg_len!(bytes, 2);
+                Ok(Self::SetIdentifyTimeout {
+                    timeout: u16::from_be_bytes([bytes[0], bytes[1]]).into()
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::ManufacturerUrl) => Ok(Self::GetManufacturerUrl),
+            (CommandClass::GetCommand, ParameterId::ProductUrl) => Ok(Self::GetProductUrl),
+            (CommandClass::GetCommand, ParameterId::FirmwareUrl) => Ok(Self::GetFirmwareUrl),
+            (CommandClass::GetCommand, ParameterId::ShippingLock) => Ok(Self::GetShippingLock),
+            (CommandClass::SetCommand, ParameterId::ShippingLock) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::SetShippingLock {
+                    locked: bytes[0] != 0
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::PowerOffReady) => Ok(Self::GetPowerOffReady),
+            (CommandClass::GetCommand, ParameterId::SerialNumber) => Ok(Self::GetSerialNumber),
+            (CommandClass::GetCommand, ParameterId::TestData) => {
+                check_msg_len!(bytes, 2);
+                Ok(Self::GetTestData {
+                    pattern_length: u16::from_be_bytes([bytes[0], bytes[1]]).into()
+                })
+            }
+            (CommandClass::SetCommand, ParameterId::TestData) => {
+                #[cfg(feature = "alloc")]
+                let loopback_data = bytes[..bytes.len().min(231)].into();
+                #[cfg(not(feature = "alloc"))]
+                let loopback_data = Vec::<u8, 231>::from_slice(&bytes[..bytes.len().min(231)]).unwrap();
+                Ok(Self::SetTestData{ loopback_data })
+            }
+            (CommandClass::GetCommand, ParameterId::CommsStatusNsc) => Ok(Self::GetCommsStatusNsc),
+            (CommandClass::SetCommand, ParameterId::CommsStatusNsc) => Ok(Self::SetCommsStatusNsc),
+            (CommandClass::GetCommand, ParameterId::ListTags) => Ok(Self::GetResponderTags),
+            (CommandClass::SetCommand, ParameterId::AddTag) => {
+                Ok(Self::SetAddTag {
+                    tag: decode_string_bytes(&bytes[..bytes.len().min(32)])?,
+                })
+            }
+            (CommandClass::SetCommand, ParameterId::RemoveTag) => {
+                Ok(Self::SetRemoveTag {
+                    tag: decode_string_bytes(&bytes[..bytes.len().min(32)])?,
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::CheckTag) => {
+                Ok(Self::GetCheckTag {
+                    tag: decode_string_bytes(&bytes[..bytes.len().min(32)])?,
+                })
+            }
+            (CommandClass::SetCommand, ParameterId::ClearTags) => Ok(Self::SetClearTags),
+            (CommandClass::GetCommand, ParameterId::DeviceUnitNumber) => Ok(Self::GetDeviceUnitNumber),
+            (CommandClass::SetCommand, ParameterId::DeviceUnitNumber) => {
+                check_msg_len!(bytes, 4);
+                Ok(Self::SetDeviceUnitNumber {
+                    unit_number: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::DmxPersonalityId) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetDmxPersonalityId {
+                    personality_number: bytes[0]
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::DeviceInfoOffstage) => {
+                check_msg_len!(bytes, 4);
+                Ok(Self::GetDeviceInfoOffstage {
+                    root_personality: bytes[0],
+                    sub_device: u16::from_be_bytes([bytes[1], bytes[2]]).into(),
+                    sub_device_personality: bytes[3]
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::SensorTypeCustom) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetSensorTypeCustom {
+                    sensor_type: bytes[0]
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::SensorUnitCustom) => {
+                check_msg_len!(bytes, 1);
+                Ok(Self::GetSensorUnitCustom {
+                    sensor_unit: bytes[0]
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::MetadataParameterVersion) => {
+                check_msg_len!(bytes, 2);
+                Ok(Self::GetMetadataParameterVersion {
+                    parameter_id: u16::from_be_bytes([bytes[0], bytes[1]]).into()
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::MetadataJson) => {
+                check_msg_len!(bytes, 2);
+                Ok(Self::GetMetadataJson {
+                    parameter_id: u16::from_be_bytes([bytes[0], bytes[1]]).into()
+                })
+            }
+            (CommandClass::GetCommand, ParameterId::MetadataJsonUrl) => Ok(Self::GetMetadataJsonUrl),
             // E1.37-7
             (CommandClass::GetCommand, ParameterId::EndpointList) => Ok(Self::GetEndpointList),
             (CommandClass::GetCommand, ParameterId::EndpointListChange) => {
