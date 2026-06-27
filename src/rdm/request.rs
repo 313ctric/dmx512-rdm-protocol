@@ -111,13 +111,26 @@ pub enum RequestParameter {
         first_sub_device: u16,
         sub_device_count: u16,
     },
-    // SetPackedPidSub, // TODO
+    SetPackedPidSub {
+        pid: ParameterId,
+        index: u16,
+        #[cfg(feature = "alloc")]
+        packed_data: Vec<u8>,
+        #[cfg(not(feature = "alloc"))]
+        packed_data: Vec<u8, 227>,
+    },
     GetPackedPidIndex {
         pid: ParameterId,
         first_item: u16,
         item_count: u16,
     },
-    // SetPackedPidIndex, // TODO
+    SetPackedPidIndex {
+        pid: ParameterId,
+        #[cfg(feature = "alloc")]
+        packed_data: Vec<u8>,
+        #[cfg(not(feature = "alloc"))]
+        packed_data: Vec<u8, 229>,
+    },
     GetDeviceInfo,
     GetProductDetailIdList,
     GetDeviceModelDescription,
@@ -753,8 +766,8 @@ impl RequestParameter {
             | Self::SetClearStatusId
             | Self::SetSubDeviceIdStatusReportThreshold { .. }
             | Self::SetQueuedMessageSensorSubscribe { .. }
-            // | Self::SetPackedPidSub { .. }
-            // | Self::SetPackedPidIndex { .. }
+            | Self::SetPackedPidSub { .. }
+            | Self::SetPackedPidIndex { .. }
             | Self::SetDeviceLabel { .. }
             | Self::SetFactoryDefaults
             | Self::SetLanguage { .. }
@@ -862,10 +875,10 @@ impl RequestParameter {
             Self::GetSupportedParametersEnhanced => ParameterId::SupportedParametersEnhanced,
             Self::GetControllerFlagSupport => ParameterId::ControllerFlagSupport,
             Self::GetNackDescription { .. } => ParameterId::NackDescription,
-            Self::GetPackedPidSub { .. } => ParameterId::PackedPidSub,
-            // Self::SetPackedPidSub { .. }
-            Self::GetPackedPidIndex { .. } => ParameterId::PackedPidIndex,
-            // Self::SetPackedPidIndex { .. }
+            Self::GetPackedPidSub { .. } |
+            Self::SetPackedPidSub { .. } => ParameterId::PackedPidSub,
+            Self::GetPackedPidIndex { .. } |
+            Self::SetPackedPidIndex { .. } => ParameterId::PackedPidIndex,
             Self::GetDeviceInfo => ParameterId::DeviceInfo,
             Self::GetProductDetailIdList => ParameterId::ProductDetailIdList,
             Self::GetDeviceModelDescription => ParameterId::DeviceModelDescription,
@@ -1160,6 +1173,17 @@ impl RequestParameter {
                 buf.extend(first_sub_device.to_be_bytes());
                 buf.extend(sub_device_count.to_be_bytes());
             }
+            Self::SetPackedPidSub { pid, index, packed_data } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(4 + packed_data.len());
+
+                buf.extend(u16::from(*pid).to_be_bytes());
+                buf.extend(index.to_be_bytes());
+                #[cfg(feature = "alloc")]
+                buf.extend_from_slice(packed_data);
+                #[cfg(not(feature = "alloc"))]
+                buf.extend_from_slice(packed_data).unwrap();
+            }
             Self::GetPackedPidIndex { pid, first_item, item_count } => {
                 #[cfg(feature = "alloc")]
                 buf.reserve(0x06);
@@ -1167,6 +1191,16 @@ impl RequestParameter {
                 buf.extend(u16::from(*pid).to_be_bytes());
                 buf.extend(first_item.to_be_bytes());
                 buf.extend(item_count.to_be_bytes());
+            }
+            Self::SetPackedPidIndex { pid, packed_data } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(2 + packed_data.len());
+
+                buf.extend(u16::from(*pid).to_be_bytes());
+                #[cfg(feature = "alloc")]
+                buf.extend_from_slice(packed_data);
+                #[cfg(not(feature = "alloc"))]
+                buf.extend_from_slice(packed_data).unwrap();
             }
             Self::GetDeviceInfo => {}
             Self::GetProductDetailIdList => {}
@@ -2329,12 +2363,33 @@ impl RequestParameter {
                     sub_device_count: u16::from_be_bytes([bytes[6], bytes[7]]),
                 })
             }
+            (CommandClass::SetCommand, ParameterId::PackedPidSub) => {
+                check_msg_len!(bytes, 4);
+                Ok(Self::SetPackedPidSub {
+                    pid: u16::from_be_bytes([bytes[0], bytes[1]]).into(),
+                    index: u16::from_be_bytes([bytes[2], bytes[3]]),
+                    #[cfg(feature = "alloc")]
+                    packed_data: bytes[4..].to_vec(),
+                    #[cfg(not(feature = "alloc"))]
+                    packed_data: Vec::<u8, 227>::from_slice(&bytes[4..]).unwrap(),
+                })
+            }
             (CommandClass::GetCommand, ParameterId::PackedPidIndex) => {
                 check_msg_len!(bytes, 6);
                 Ok(Self::GetPackedPidIndex {
                     pid: u16::from_be_bytes([bytes[0], bytes[1]]).into(),
                     first_item: u16::from_be_bytes([bytes[2], bytes[3]]),
                     item_count: u16::from_be_bytes([bytes[4], bytes[5]]),
+                })
+            }
+            (CommandClass::SetCommand, ParameterId::PackedPidIndex) => {
+                check_msg_len!(bytes, 2);
+                Ok(Self::SetPackedPidIndex {
+                    pid: u16::from_be_bytes([bytes[0], bytes[1]]).into(),
+                    #[cfg(feature = "alloc")]
+                    packed_data: bytes[2..].to_vec(),
+                    #[cfg(not(feature = "alloc"))]
+                    packed_data: Vec::<u8, 229>::from_slice(&bytes[2..]).unwrap(),
                 })
             }
             (CommandClass::GetCommand, ParameterId::DeviceInfo) => Ok(Self::GetDeviceInfo),

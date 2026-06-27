@@ -389,8 +389,22 @@ pub enum ResponseParameterData {
         #[cfg(not(feature = "alloc"))]
         description: String<32>,
     },
-    // GetPackedPidSub // TODO
-    // GetPackedPidIndex // TODO
+    GetPackedPidSub {
+        /// If this is the first message it will contain the 2-byte PID and the 2-byte index,
+        /// followed by the packed data items
+        /// 
+        /// Otherwise it will just contain the packed data items
+        #[cfg(feature = "alloc")] packed_data: Vec<u8>,
+        #[cfg(not(feature = "alloc"))] packed_data: Vec<u8, 231>,
+    },
+    GetPackedPidIndex {
+        /// If this is the first message it will contain the 2-byte PID,
+        /// followed by the packed data items
+        /// 
+        /// Otherwise it will just contain the packed data items
+        #[cfg(feature = "alloc")] packed_data: Vec<u8>,
+        #[cfg(not(feature = "alloc"))] packed_data: Vec<u8, 231>,
+    },
     GetDeviceInfo(DeviceInfo),
     GetProductDetailIdList(
         #[cfg(feature = "alloc")] Vec<ProductDetail>,
@@ -1103,6 +1117,16 @@ impl ResponseParameterData {
 
                 buf.extend(u16::from(*nack_reason_code).to_be_bytes());
                 buf.extend(description.bytes());
+            }
+            Self::GetPackedPidSub { packed_data } |
+            Self::GetPackedPidIndex { packed_data } => {
+                #[cfg(feature = "alloc")]
+                buf.reserve(packed_data.len());
+
+                #[cfg(feature = "alloc")]
+                buf.extend_from_slice(packed_data);
+                #[cfg(not(feature = "alloc"))]
+                buf.extend_from_slice(packed_data).unwrap();
             }
             Self::GetDeviceInfo(info) => {
                 info.encode(&mut buf);
@@ -2720,6 +2744,22 @@ impl ResponseParameterData {
                 Ok(Self::GetNackDescription {
                     nack_reason_code: u16::from_be_bytes([bytes[0], bytes[1]]).try_into()?,
                     description: decode_string_bytes(&bytes[2..bytes.len().min(2+32)])?,
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::PackedPidSub) => {
+                Ok(Self::GetPackedPidSub {
+                    #[cfg(feature = "alloc")]
+                    packed_data: bytes.to_vec(),
+                    #[cfg(not(feature = "alloc"))]
+                    packed_data: Vec::<u8, 231>::from_slice(bytes).unwrap(),
+                })
+            }
+            (CommandClass::GetCommandResponse, ParameterId::PackedPidIndex) => {
+                Ok(Self::GetPackedPidIndex {
+                    #[cfg(feature = "alloc")]
+                    packed_data: bytes.to_vec(),
+                    #[cfg(not(feature = "alloc"))]
+                    packed_data: Vec::<u8, 231>::from_slice(bytes).unwrap(),
                 })
             }
             (CommandClass::GetCommandResponse, ParameterId::DeviceInfo) => {
